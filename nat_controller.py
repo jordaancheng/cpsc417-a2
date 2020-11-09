@@ -66,7 +66,7 @@ class NatController(app_manager.RyuApp):
         dst_mac = data_packet[0].dst
 
         if dst_mac in self.switch_table:
-            dst_port = self.switch_table[src_mac]
+            dst_port = self.switch_table[dst_mac]
         else:
             dst_port = of_packet.datapath.ofproto.OFPP_FLOOD
         self.send_packet(of_packet.data, of_packet, dst_port, actions=actions)
