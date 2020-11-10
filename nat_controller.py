@@ -35,8 +35,8 @@ class NatController(app_manager.RyuApp):
         if self.is_ipv6(data_packet):
             return
         
-        self.debug('Handling packet: %s' % data_packet)
-        self.debug('Reason: %s' % of_packet.reason)
+        # self.debug('Handling packet: %s' % data_packet)
+        # self.debug('Reason: %s' % of_packet.reason)
 
         # Keep a record of MAC address incoming port
         self.switch_learn(of_packet, data_packet)
@@ -152,9 +152,17 @@ class NatController(app_manager.RyuApp):
                                     match=match, extra_actions=actions)
             del self.pending_arp[arp_src_ip]
         
+        self.debug('\nINSIDE handle_incoming_arp()')
+        self.debug('data_packet: %s' % data_packet)
+        self.debug('opcode: %d' % data_packet[1].opcode)
+        self.debug('arp_table: %s' % self.arp_table)
+
         if data_packet[1].opcode == 1:
             # ARP request
             self.send_arp_reply(of_packet, data_packet)
+        elif data_packet[1].opcode == 2:
+            # ARP reply
+            self.switch_forward(of_packet, data_packet)
 
     def send_arp_request(self, ip, of_packet, match, actions):
         '''Send an ARP request for an IP with unknown MAC address'''
@@ -203,6 +211,7 @@ class NatController(app_manager.RyuApp):
         elif arp_dst_ip == config.nat_external_ip:
             arp_dst_mac = config.nat_external_mac
         else:
+            self.switch_forward(of_packet, data_packet)
             return
 
         self.debug('Sending ARP reply: %s -> %s' % (arp_dst_ip, arp_dst_mac))
@@ -256,6 +265,10 @@ class NatController(app_manager.RyuApp):
         '''Handles a packet with destination MAC equal to internal side of NAT router.'''
 
         # TODO Implement this function
+        
+        self.debug('\nINSIDE handle_incoming_internal_msg()')
+        self.debug('data_packet: %s' % data_packet)
+        self.switch_forward(of_packet, data_packet)
         pass
 
     def debug(self, str):
