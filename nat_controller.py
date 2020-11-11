@@ -35,7 +35,7 @@ class NatController(app_manager.RyuApp):
         if self.is_ipv6(data_packet):
             return
         
-        # self.debug('Handling packet: %s' % data_packet)
+        # self.debug('\nHandling packet: %s' % data_packet)
         # self.debug('Reason: %s' % of_packet.reason)
 
         # Keep a record of MAC address incoming port
@@ -259,6 +259,9 @@ class NatController(app_manager.RyuApp):
         '''Handles a packet with destination MAC equal to external side of NAT router.'''
         
         # TODO Implement this function
+        
+        self.debug('\nINSIDE handle_incoming_external_msg()')
+        self.debug('data_packet: %s' % data_packet)
         pass
 
     def handle_incoming_internal_msg(self, of_packet, data_packet):
@@ -267,8 +270,27 @@ class NatController(app_manager.RyuApp):
         # TODO Implement this function
         
         self.debug('\nINSIDE handle_incoming_internal_msg()')
-        self.debug('data_packet: %s' % data_packet)
-        self.switch_forward(of_packet, data_packet)
+        # self.debug('data_packet: %s' % data_packet)
+        dst_ip = data_packet[1].dst
+        dst_mac = data_packet[0].dst
+        if self.is_internal_network(dst_ip):
+            self.debug('reached here1')
+            self.switch_forward(of_packet, data_packet)
+        elif dst_mac == config.nat_internal_mac:
+            self.debug('reached here2')
+            self.debug('data_packet: %s' % data_packet)
+            # data_packet[0].src = config.nat_external_mac
+            # data_packet[0].dst = '00:00:00:00:00:00'
+            # data_packet[1].src = config.nat_external_ip
+            parser = of_packet.datapath.ofproto_parser
+            actions = [parser.OFPActionSetField(eth_src=config.nat_external_mac),
+                        parser.OFPActionSetField(eth_dst='00:00:00:00:00:00'),
+                        parser.OFPActionSetField(ipv4_src=config.nat_external_ip)]
+            self.router_forward(of_packet, data_packet, config.nat_gateway_ip, None, actions)
+        else:
+            self.debug('reached here3')
+            self.debug('data_packet: %s' % data_packet)
+
         pass
 
     def debug(self, str):
