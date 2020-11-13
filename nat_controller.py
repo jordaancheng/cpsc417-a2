@@ -259,6 +259,12 @@ class NatController(app_manager.RyuApp):
         
         # TODO Implement this function
         ## We have set to check the port and set the correct destination ip address here
+        parser = of_packet.datapath.ofproto_parser
+        actions = [ parser.OFPActionSetField(ipv4_dst='192.168.0.1'),
+                    parser.OFPActionSetField(eth_src=config.nat_internal_mac),
+                    parser.OFPActionSetField(eth_dst='00:00:00:00:01:01')
+                    ]
+        self.switch_forward(of_packet, data_packet, actions)
         self.debug('\nINSIDE handle_incoming_external_msg()')
         self.debug('data_packet: %s' % data_packet)
         pass
@@ -269,7 +275,7 @@ class NatController(app_manager.RyuApp):
         # TODO Implement this function
         
         self.debug('\nINSIDE handle_incoming_internal_msg()')
-        # self.debug('data_packet: %s' % data_packet)
+        self.debug('data_packet: %s' % data_packet)
         dst_ip = data_packet[1].dst
         dst_mac = data_packet[0].dst
         if self.is_internal_network(dst_ip):
