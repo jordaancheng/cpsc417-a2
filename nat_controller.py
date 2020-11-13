@@ -6,7 +6,7 @@ from ryu.base import app_manager
 from ryu.controller import ofp_event
 from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER
 from ryu.controller.handler import set_ev_cls
-from ryu.ofproto import ether, ofproto_v1_0, ofproto_v1_2, ofproto_v1_3
+from ryu.ofproto import ether, ofproto_v1_0, ofproto_v1_2, ofproto_v1_3, inet
 from ryu.lib.packet import packet, ethernet, ether_types, arp, ipv4, tcp, udp
 from ryu.lib import mac, addrconv
 
@@ -85,7 +85,6 @@ class NatController(app_manager.RyuApp):
         match is set, also sends a flow update using the same actions
         for any future matching packet.
         '''
-        
         if next_ip not in self.arp_table:
             self.send_arp_request(next_ip, of_packet, match, extra_actions)
             return
@@ -160,9 +159,9 @@ class NatController(app_manager.RyuApp):
         if data_packet[1].opcode == 1:
             # ARP request
             self.send_arp_reply(of_packet, data_packet)
-        elif data_packet[1].opcode == 2:
-            # ARP reply
-            self.switch_forward(of_packet, data_packet)
+        # elif data_packet[1].opcode == 2:
+        #     # ARP reply
+        #     self.switch_forward(of_packet, data_packet)
 
     def send_arp_request(self, ip, of_packet, match, actions):
         '''Send an ARP request for an IP with unknown MAC address'''
@@ -259,7 +258,7 @@ class NatController(app_manager.RyuApp):
         '''Handles a packet with destination MAC equal to external side of NAT router.'''
         
         # TODO Implement this function
-        
+        ## We have set to check the port and set the correct destination ip address here
         self.debug('\nINSIDE handle_incoming_external_msg()')
         self.debug('data_packet: %s' % data_packet)
         pass
@@ -283,10 +282,15 @@ class NatController(app_manager.RyuApp):
             # data_packet[0].dst = '00:00:00:00:00:00'
             # data_packet[1].src = config.nat_external_ip
             parser = of_packet.datapath.ofproto_parser
-            actions = [parser.OFPActionSetField(eth_src=config.nat_external_mac),
-                        parser.OFPActionSetField(eth_dst='00:00:00:00:00:00'),
-                        parser.OFPActionSetField(ipv4_src=config.nat_external_ip)]
-            self.router_forward(of_packet, data_packet, config.nat_gateway_ip, None, actions)
+            match_reply = parser.OFPMatch(in_port=of_packet.match['in_port'],
+                                        eth_type=ether.ETH_TYPE_IP,
+                                        ip_proto=data_packet[1].proto,
+                                        ipv4_src=data_packet[1].src,
+                                        ipv4_dst=data_packet[1].dst,
+                                        tcp_src=data_packet[2].src_port,
+                                        tcp_dst=data_packet[2].dst_port)
+            actions = [parser.OFPActionSetField(ipv4_src=config.nat_external_ip)]
+            self.router_forward(of_packet, data_packet, config.nat_gateway_ip, match_reply, actions)
         else:
             self.debug('reached here3')
             self.debug('data_packet: %s' % data_packet)
