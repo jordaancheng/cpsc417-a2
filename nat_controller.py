@@ -260,11 +260,12 @@ class NatController(app_manager.RyuApp):
         # TODO Implement this function
         ## We have set to check the port and set the correct destination ip address here
         parser = of_packet.datapath.ofproto_parser
-        actions = [ parser.OFPActionSetField(ipv4_dst='192.168.0.1'),
-                    parser.OFPActionSetField(eth_src=config.nat_internal_mac),
-                    parser.OFPActionSetField(eth_dst='00:00:00:00:01:01')
-                    ]
-        self.switch_forward(of_packet, data_packet, actions)
+        dst_port = data_packet[2].dst_port
+        if (str(dst_port) in self.ports_in_use):
+            actions = [ parser.OFPActionSetField(ipv4_dst=self.ports_in_use[str(dst_port)]['ip']),
+                        parser.OFPActionSetField(eth_src=config.nat_internal_mac),
+                        parser.OFPActionSetField(eth_dst=self.ports_in_use[str(dst_port)]['mac'])]
+            self.switch_forward(of_packet, data_packet, actions)
         self.debug('\nINSIDE handle_incoming_external_msg()')
         self.debug('data_packet: %s' % data_packet)
         pass
@@ -287,6 +288,11 @@ class NatController(app_manager.RyuApp):
             # data_packet[0].src = config.nat_external_mac
             # data_packet[0].dst = '00:00:00:00:00:00'
             # data_packet[1].src = config.nat_external_ip
+            if (data_packet[2].src_port not in self.ports_in_use):
+                self.ports_in_use[str(data_packet[2].src_port)] = {
+                    'ip': data_packet[1].src,
+                    'mac': data_packet[0].src
+                }
             parser = of_packet.datapath.ofproto_parser
             match_reply = parser.OFPMatch(in_port=of_packet.match['in_port'],
                                         eth_type=ether.ETH_TYPE_IP,
