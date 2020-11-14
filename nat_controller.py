@@ -159,9 +159,9 @@ class NatController(app_manager.RyuApp):
         if data_packet[1].opcode == 1:
             # ARP request
             self.send_arp_reply(of_packet, data_packet)
-        # elif data_packet[1].opcode == 2:
-        #     # ARP reply
-        #     self.switch_forward(of_packet, data_packet)
+        elif data_packet[1].opcode == 2:
+            # ARP reply
+            self.switch_forward(of_packet, data_packet)
 
     def send_arp_request(self, ip, of_packet, match, actions):
         '''Send an ARP request for an IP with unknown MAC address'''
@@ -276,38 +276,53 @@ class NatController(app_manager.RyuApp):
         # TODO Implement this function
         
         self.debug('\nINSIDE handle_incoming_internal_msg()')
-        self.debug('data_packet: %s' % data_packet)
-        dst_ip = data_packet[1].dst
-        dst_mac = data_packet[0].dst
+        # self.debug('data_packet: %s' % data_packet)
+        packet_ethernet = data_packet.get_protocol(ethernet.ethernet)
+        packet_ipv4 = data_packet.get_protocol(ipv4.ipv4)
+        packet_tcp = data_packet.get_protocol(tcp.tcp)
+        packet_udp = data_packet.get_protocol(udp.udp)
+        # self.debug('packet_ethernet: %s' % packet_ethernet)
+        # self.debug('packet_ipv4: %s' % packet_ipv4)
+        # self.debug('packet_tcp: %s' % packet_tcp)
+        # self.debug('packet_udp: %s' % packet_udp)
+        dst_ip = packet_ipv4.dst
+        dst_mac = packet_ethernet.dst
         if self.is_internal_network(dst_ip):
-            self.debug('reached here1')
+            self.debug('reached here1') 
             self.switch_forward(of_packet, data_packet)
         elif dst_mac == config.nat_internal_mac:
             self.debug('reached here2')
-            self.debug('data_packet: %s' % data_packet)
-            # data_packet[0].src = config.nat_external_mac
-            # data_packet[0].dst = '00:00:00:00:00:00'
-            # data_packet[1].src = config.nat_external_ip
+
             if (data_packet[2].src_port not in self.ports_in_use):
                 self.ports_in_use[str(data_packet[2].src_port)] = {
                     'ip': data_packet[1].src,
                     'mac': data_packet[0].src
                 }
-            parser = of_packet.datapath.ofproto_parser
-            match_reply = parser.OFPMatch(in_port=of_packet.match['in_port'],
-                                        eth_type=ether.ETH_TYPE_IP,
-                                        ip_proto=data_packet[1].proto,
-                                        ipv4_src=data_packet[1].src,
-                                        ipv4_dst=data_packet[1].dst,
-                                        tcp_src=data_packet[2].src_port,
-                                        tcp_dst=data_packet[2].dst_port)
-            actions = [parser.OFPActionSetField(ipv4_src=config.nat_external_ip)]
-            self.router_forward(of_packet, data_packet, config.nat_gateway_ip, match_reply, actions)
-        else:
-            self.debug('reached here3')
-            self.debug('data_packet: %s' % data_packet)
 
-        pass
+            if self.is_tcp(data_packet):
+                parser = of_packet.datapath.ofproto_parser
+                match = parser.OFPMatch(in_port=of_packet.match['in_port'],
+                                        eth_type=ether.ETH_TYPE_IP,
+                                        ip_proto=packet_ipv4.proto,
+                                        ipv4_src=packet_ipv4.src,
+                                        ipv4_dst=packet_ipv4.dst,
+                                        tcp_src=packet_tcp.src_port,
+                                        tcp_dst=packet_tcp.dst_port)
+                actions = [parser.OFPActionSetField(ipv4_src=config.nat_external_ip)]
+
+            elif self.is_udp(data_packet):
+                parser = of_packet.datapath.ofproto_parser
+                match = parser.OFPMatch(in_port=of_packet.match['in_port'],
+                                        eth_type=ether.ETH_TYPE_IP,
+                                        ip_proto=packet_ipv4.proto,
+                                        ipv4_src=packet_ipv4.src,
+                                        ipv4_dst=packet_ipv4.dst,
+                                        udp_src=packet_udp.src_port,
+                                        udp_dst=packet_udp.dst_port)
+                actions = [parser.OFPActionSetField(ipv4_src=config.nat_external_ip)]
+            
+            self.router_forward(of_packet, data_packet, config.nat_gateway_ip, match, actions)
+
 
     def debug(self, str):
         print(str)
