@@ -98,7 +98,7 @@ class NatController(app_manager.RyuApp):
 
         # This runs after switch_forward so that the output action is included.
         if match is not None:
-            self.add_flow(of_packet.datapath, match, actions)
+            self.add_flow(of_packet.datapath, match, actions, data_packet)
             
     def send_packet(self, payload, of_packet, port, actions=None):
         '''Send a packet to the switch for processing/forwarding'''
@@ -119,7 +119,7 @@ class NatController(app_manager.RyuApp):
                                   data=payload)
         switch.send_msg(out)
 
-    def add_flow(self, switch, match, actions):
+    def add_flow(self, switch, match, actions, data_packet):
         '''Send a new flow (match+action) to be added to a switch OpenFlow table'''
 
         self.debug('Adding a new flow:')
@@ -132,6 +132,10 @@ class NatController(app_manager.RyuApp):
         modification = parser.OFPFlowMod(switch,
                                          match=match,
                                          instructions=instructions)
+        if self.is_tcp(data_packet):
+            modification.idle_timeout = 0
+        else:
+            modification.idle_timeout = 20
         switch.send_msg(modification)
         
     def handle_incoming_arp(self, of_packet, data_packet):
@@ -290,7 +294,7 @@ class NatController(app_manager.RyuApp):
                         parser.OFPActionSetField(eth_src=config.nat_internal_mac),
                         parser.OFPActionSetField(eth_dst=self.ports_in_use[str(dst_port)]['mac'])]
             self.switch_forward(of_packet, data_packet, actions)
-            self.add_flow(of_packet.datapath, match , actions)
+            self.add_flow(of_packet.datapath, match , actions, data_packet)
         # Drop/ignore the message if destination port not in ports_in_use
         else:
             pass
