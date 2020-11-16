@@ -35,6 +35,9 @@ class NatController(app_manager.RyuApp):
         if self.is_ipv6(data_packet):
             return
 
+        self.debug('Handling packet: %s' % data_packet)
+        self.debug('Reason: %s' % of_packet.reason)
+
         # Keep a record of MAC address incoming port
         self.switch_learn(of_packet, data_packet)
 
@@ -98,7 +101,7 @@ class NatController(app_manager.RyuApp):
 
         # This runs after switch_forward so that the output action is included.
         if match is not None:
-            self.add_flow(of_packet.datapath, match, actions)
+            self.add_flow(of_packet.datapath, match, actions, data_packet)
             
     def send_packet(self, payload, of_packet, port, actions=None):
         '''Send a packet to the switch for processing/forwarding'''
@@ -119,7 +122,7 @@ class NatController(app_manager.RyuApp):
                                   data=payload)
         switch.send_msg(out)
 
-    def add_flow(self, switch, match, actions):
+    def add_flow(self, switch, match, actions, data_packet):
         '''Send a new flow (match+action) to be added to a switch OpenFlow table'''
 
         self.debug('Adding a new flow:')
@@ -132,6 +135,10 @@ class NatController(app_manager.RyuApp):
         modification = parser.OFPFlowMod(switch,
                                          match=match,
                                          instructions=instructions)
+        if self.is_tcp(data_packet):
+            modification.idle_timeout = 0
+        else:
+            modification.idle_timeout = 20
         switch.send_msg(modification)
         
     def handle_incoming_arp(self, of_packet, data_packet):
@@ -147,11 +154,6 @@ class NatController(app_manager.RyuApp):
                 self.router_forward(of_packet, packet.Packet(data=of_packet.data), arp_src_ip,
                                     match=match, extra_actions=actions)
             del self.pending_arp[arp_src_ip]
-        
-        self.debug('\nINSIDE handle_incoming_arp()')
-        self.debug('data_packet: %s' % data_packet)
-        self.debug('opcode: %d' % data_packet[1].opcode)
-        self.debug('arp_table: %s' % self.arp_table)
 
         if data_packet[1].opcode == 1:
             # ARP request
@@ -256,15 +258,12 @@ class NatController(app_manager.RyuApp):
         '''Handles a packet with destination MAC equal to external side of NAT router.'''
         
         # TODO Implement this function
-        self.debug('\nINSIDE handle_incoming_external_msg()')
-        self.debug('data_packet: %s' % data_packet)
         packet_ethernet = data_packet.get_protocol(ethernet.ethernet)
         packet_ipv4 = data_packet.get_protocol(ipv4.ipv4)
         packet_tcp = data_packet.get_protocol(tcp.tcp)
         packet_udp = data_packet.get_protocol(udp.udp)
         dst_ip = packet_ipv4.dst
         dst_mac = packet_ethernet.dst
-        parser = of_packet.datapath.ofproto_parser
 
         parser = of_packet.datapath.ofproto_parser
         dst_port = data_packet[2].dst_port
@@ -290,7 +289,7 @@ class NatController(app_manager.RyuApp):
                         parser.OFPActionSetField(eth_src=config.nat_internal_mac),
                         parser.OFPActionSetField(eth_dst=self.ports_in_use[str(dst_port)]['mac'])]
             self.switch_forward(of_packet, data_packet, actions)
-            self.add_flow(of_packet.datapath, match , actions)
+            self.add_flow(of_packet.datapath, match, actions, data_packet)
         # Drop/ignore the message if destination port not in ports_in_use
         else:
             pass
@@ -299,8 +298,6 @@ class NatController(app_manager.RyuApp):
         '''Handles a packet with destination MAC equal to internal side of NAT router.'''
 
         # TODO Implement this function
-        self.debug('\nINSIDE handle_incoming_internal_msg()')
-
         packet_ethernet = data_packet.get_protocol(ethernet.ethernet)
         packet_ipv4 = data_packet.get_protocol(ipv4.ipv4)
         packet_tcp = data_packet.get_protocol(tcp.tcp)
@@ -312,7 +309,6 @@ class NatController(app_manager.RyuApp):
         # Destination IP is one of the internal hosts
         # Connection between internal client to internal server
         if self.is_internal_network(dst_ip):
-            self.debug('Packet from %s to %s: %s' % (packet_ipv4.src, dst_ip, data_packet))
             self.switch_forward(of_packet, data_packet)
         
         # Connection between internal client to external server
@@ -331,11 +327,9 @@ class NatController(app_manager.RyuApp):
                                     ipv4_dst=packet_ipv4.dst)
             actions = [parser.OFPActionSetField(ipv4_src=config.nat_external_ip)]
             if self.is_tcp(data_packet):
-                self.debug('This is a TCP packet: %s' % data_packet)
                 match.tcp_src = packet_tcp.src_port
                 match.tcp_dst = packet_tcp.dst_port
             elif self.is_udp(data_packet):
-                self.debug('This is an UDP packet: %s' % data_packet)
                 match.udp_src = packet_udp.src_port
                 match.udp_dst = packet_udp.dst_port
             else:
